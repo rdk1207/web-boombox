@@ -1,10 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <meta charset="utf-8">
-    <script src="web-boombox.js"></script>
-    <link rel="stylesheet" href="custom-css-reset.css">
-    <link rel="stylesheet" href="web-boombox.css">
+    <meta charset="UTF-8">
     <style type="text/css">
 html {
   background: hsl(0deg 0% 10%);
@@ -20,8 +17,8 @@ html * {
 body {
   max-width: 50rem;
   margin: 1rem auto;
-  padding: 0.2rem;
-  
+  padding: 0.5rem;
+  background-size: 200% 200%;
   background-image: linear-gradient(
     45deg,
     hsl(211deg 100% 46%) 0%,
@@ -93,14 +90,13 @@ audio {
   to { transform: rotate(0deg); }
 }
     </style>
-    <script>
+    <script defer>
 
 function dropHandler(ev){
   console.log('File(s) dropped');
   // Prevent default behavior (Prevent file from being opened)
   ev.preventDefault();
   
-  name = '';
   document.querySelector('#drop_zone').classList.remove('drag');
   if (ev.dataTransfer.items) {
     // Use DataTransferItemList interface to access the file(s)
@@ -108,71 +104,140 @@ function dropHandler(ev){
       // If dropped items aren't files, reject them
       if (ev.dataTransfer.items[i].kind === 'file') {
         var file = ev.dataTransfer.items[i].getAsFile();
-        console.log('... file[' + i + '].name = ' + file.name);
-        name = file.name;
-        addCard(name);
-        window.names.push (name);
-        updateLocalStorage ();
+        if (! window.song_map.hasOwnProperty(file.name)){
+          song = {
+            path : file.name,
+            position: 0
+          }
+          window.songs.push (song);
+          window.song_map[song.path] = song;
+          addCard(song);
+          updateLocalStorage ();
+        }
       }
     }
+    load(window.songs[window.songs.length - 1]); 
   }
-  
-  load(name);
 }
 
-function addCard (name){
-  new_card = document.querySelector('#template').cloneNode(true);
-  new_card.removeAttribute('id');
-  new_card.querySelector('.name').textContent = name;
-  document.querySelector('#drop_zone').appendChild(new_card);
+function addCard (song){
+  new_card = document.querySelector ('#template').cloneNode(true);
+  new_card.removeAttribute ('id');
+  new_card.querySelector ('.name').textContent = song.path;
+  new_card.setAttribute ('data-path', song.path);
+  document.querySelector ('#drop_zone').appendChild(new_card);
 }
 
-function load(name){
-  document.querySelector('#title').textContent = name;
-  document.querySelector('audio').src = name;
+function load(song){
+  document.querySelector ('#title').textContent = song.path;
+  document.querySelector ('audio').src = song.path;
+  document.querySelector ('audio').currentTime = song.position;
+  window.current_song = song.path;
 }
 
-function dragOverHandler(ev) {
-  console.log('File(s) in drop zone');
+function dragOverHandler (ev) {
+  console.log ('File(s) in drop zone');
   // Prevent default behavior (Prevent file from being opened)
   ev.preventDefault();
 }
 
 function playHandler (ev) {
-  load (ev.target.parentNode.querySelector('.name').textContent);
-  document.title = ev.target.parentNode.querySelector('.name').textContent;
+  load (window.song_map[ev.target.parentNode.getAttribute('data-path')]);
+  document.title = ev.target.parentNode.getAttribute ('data-path');
 }
 
 function removeHandler (ev) {
+  song_path_to_remove = ev.target.parentNode.getAttribute ('data-path');
+  window.songs = window.songs.filter ( song => song.path !== song_path_to_remove);
   document.querySelector ('#drop_zone').removeChild (ev.target.parentNode);
-  i = window.names.indexOf (ev.target.parentNode.querySelector ('.name').textContent)
-  window.names.splice (i, 1);
   updateLocalStorage ();
 }
 
 function updateLocalStorage(){
-  window.localStorage.setItem ('names', JSON.stringify(window.names));
+  window.localStorage.setItem ('save_data', JSON.stringify({
+    songs: window.songs,
+    current_song: document.querySelector ('audio').getAttribute ('src')
+  }));
+}
+
+gradientDegree = 45;
+gradientTimeout = -1;
+gradientIncrement = 5;
+
+vol_up_interval_id = -1;
+function incrementGradient(){
+  gradientDegree = (gradientDegree + gradientIncrement) % 360;
+  document.body.style.backgroundImage = `linear-gradient( ${gradientDegree}deg, hsl(211deg 100% 46%) 0%, hsl(258deg 70% 65%) 21%, hsl(296deg 55% 60%) 30%, hsl(323deg 84% 65%) 39%, hsl(339deg 100% 69%) 46%, hsl(356deg 100% 72%) 54%, hsl(15deg 100% 70%) 61%, hsl(29deg 100% 66%) 69%, hsl(39deg 94% 64%) 79%, hsl(55deg 70% 62%) 100% )`;
+  audioEl.style.background = `hsl(${gradientDegree}deg 100% 50%)`;
 }
 
 window.onload = function(){
-  window.names = [];
-  try { window.names = JSON.parse(window.localStorage.getItem('names')); }
-  catch (e){ console.log(e); }
-  
-  if(window.names){
-    for (var i = 0; i < window.names.length; ++i){
-      addCard(window.names[i]);
-    }
+  audioEl = document.body.querySelector ('audio');
+  window.songs = [];
+  window.song_map = {};
+  try {
+    save_data = JSON.parse(window.localStorage.getItem('save_data'));
+    window.songs = save_data.songs;
+    window.current_song = save_data.current_song;
   }
+  catch (e){ console.log(e); }
+  if (window.songs.length > 0) {
+    window.songs.forEach (song => {
+      addCard(song);
+      window.song_map[song.path] = song;
+    });
+    load (window.song_map[window.current_song]);
+  }
+  else {
+    window.songs = [];
+  }
+  
+  function vol_up(){
+    if (audioEl.volume >= 0.9) {
+      audioEl.volume = 1.0;
+      window.clearInterval(vol_up_interval_id);
+    }
+    else audioEl.volume += 0.1;
+  }
+  
+  audioEl.addEventListener ('play', (evt)=>{
+    window.clearInterval (gradientTimeout);
+    gradientTimeout = window.setInterval (incrementGradient, 30);
+    audioEl.volume = 0;
+  });
+  
+  audioEl.addEventListener ('playing', evt=>{
+    window.setTimeout (()=>{
+      vol_up_interval_id = window.setInterval (vol_up, 50);
+    }, 1000);
+  });
+  audioEl.addEventListener ('pause', (evt)=>{
+    window.clearInterval (gradientTimeout);
+    load (window.song_map[window.current_song]);
+    audioEl.volume = 0;
+  });
+  incrementGradient();
+  
+  window.setInterval (()=>{
+    current_path = document.querySelector ('audio').getAttribute ('src');
+    if (window.song_map.hasOwnProperty (current_path)){
+      window.song_map[current_path].position = Math.floor(document.querySelector ('audio').currentTime);
+    }
+    updateLocalStorage();
+  }, 1000);
+  
+  audioEl.volume = 0;
 }
 
+
     </script>
+    <title>Boombox</title>
   </head>
 
   <body>
     <div id="drop_zone" ondrop="dropHandler(event);" ondragover="dragOverHandler(event);">
       <p id="title" class="mp3-card">proximity-2020.mp3</p>
-      <audio src="proximity-2020.mp3" controls></audio>
+      <audio src="" controls></audio>
       <p id="template" class="mp3-card" >
         <span class="pointer" onclick="playHandler(event);">&#127926;</span>
         <span class="pointer" onclick="removeHandler(event);">&#10060;</span>
